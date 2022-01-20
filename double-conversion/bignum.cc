@@ -332,7 +332,7 @@ void Bignum::MultiplyByUInt64(const uint64_t factor) {
   //  = 0xFFFF FFFF FFFF FFFF = 2^64 - 1
   // we see that all the variables above can be kept in uint64_t
   //
-  // a = 2^kBigitSize 
+  // a = 2^kBigitSize = 2^28
   // u = used_bigits_ - 1
   // f = factor = high * 2^32 + low
   // C = carry = 0
@@ -347,8 +347,9 @@ void Bignum::MultiplyByUInt64(const uint64_t factor) {
   //   = product_high_i * a^i * 2^32 + product_low_i * a^i + ((carry >> 28) * a + carry & kBigitMask) * a^i
   //   = product_high_i * a^(i+1) * 2^4 + (product_low_i + carry & kBigitMask) * a^i + (carry >> 28) * a^(i+1)
   //   = product_high_i * a^(i+1) * 2^4 + (carry >> 28) * a^(i+1) + tmp * a^i
-  //   = (product_high_i * 2^4 + (carry >> 28)) * a^(i+1) + (tmp >> 28 * a + tmp & kBigitMask) * a^i
-  //   = (product_high_i * 2^4 + (carry >> 28) + tmp >> 28) * a^(i+1) + (tmp & kBigitMask) * a^i
+  //   = (product_high_i * 2^4 + carry >> 28) * a^(i+1) + (tmp >> 28 * a + tmp & kBigitMask) * a^i
+  //   = (product_high_i << 4 + carry >> 28 + tmp >> 28) * a^(i+1) + (tmp & kBigitMask) * a^i
+  //   = carry' * a^(i+1) + (tmp & kBigitMask) * a^i
   DOUBLE_CONVERSION_ASSERT(kBigitSize < 32);
   uint64_t carry = 0;
   const uint64_t low = factor & 0xFFFFFFFF;

@@ -29,3 +29,4 @@ _deps
 DartConfiguration.tcl
 bazel-*
 .cache
+.vs
