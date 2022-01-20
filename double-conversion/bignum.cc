@@ -313,6 +313,42 @@ void Bignum::MultiplyByUInt64(const uint64_t factor) {
   if (used_bigits_ == 0) {
     return;
   }
+  // low_max = 0xFFFF FFFF
+  // high_max = 0xFFF FFFFF
+  // product_low_max 
+  //   = RawBigit_max * low_max 
+  //   = 0xFFF FFFF * 0xFFFF FFFF
+  //   = 0xFFF FFFE F000 0001 < 2^64 - 1
+  // product_high_max 
+  //   = RawBigit_max * high_max 
+  //   = 0xFFF FFFE F000 0001 < 2^64 - 1
+  // tmp_max 
+  //   = 0xFFF FFFF + product_low_max
+  //   = 0xFFF FFFF + 0xFFF FFFE F000 0001
+  //   = 0xFFF FFFF 0000 0000 < 2^64 - 1
+  // carry_max
+  //  = (carry_max >> 28) + (tmp_max >> 28) + (product_high_max << 4)
+  //  = 0xF FFFF FFFF + 0xFFFF FFF0 + 0xFFFF FFEF 0000 0010
+  //  = 0xFFFF FFFF FFFF FFFF = 2^64 - 1
+  // we see that all the variables above can be kept in uint64_t
+  //
+  // a = 2^kBigitSize 
+  // u = used_bigits_ - 1
+  // f = factor = high * 2^32 + low
+  // C = carry = 0
+  // num = B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u
+  // num * f  + C
+  //   = (B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f + C
+  //   = C + B[0] * f + (B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f
+  //   = C + B[0] * (high * 2^32 + low) + (B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f
+  // 
+  // B[i] * a^i * high * 2^32 + B[i] * a^i * low + carry * a^i
+  //   = product_high_i * a^i * 2^32 + product_low_i * a^i + carry * a^i
+  //   = product_high_i * a^i * 2^32 + product_low_i * a^i + ((carry >> 28) * a + carry & kBigitMask) * a^i
+  //   = product_high_i * a^(i+1) * 2^4 + (product_low_i + carry & kBigitMask) * a^i + (carry >> 28) * a^(i+1)
+  //   = product_high_i * a^(i+1) * 2^4 + (carry >> 28) * a^(i+1) + tmp * a^i
+  //   = (product_high_i * 2^4 + (carry >> 28)) * a^(i+1) + (tmp >> 28 * a + tmp & kBigitMask) * a^i
+  //   = (product_high_i * 2^4 + (carry >> 28) + tmp >> 28) * a^(i+1) + (tmp & kBigitMask) * a^i
   DOUBLE_CONVERSION_ASSERT(kBigitSize < 32);
   uint64_t carry = 0;
   const uint64_t low = factor & 0xFFFFFFFF;
