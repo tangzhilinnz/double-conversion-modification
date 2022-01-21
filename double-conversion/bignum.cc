@@ -236,6 +236,16 @@ void Bignum::SubtractBignum(const Bignum& other) {
 
 
 void Bignum::ShiftLeft(const int shift_amount) {
+  // In = 2^kBigitSize = 2^28
+  // num = RawBigit * In^exponent_
+  // num * 2^shift_amount
+  //   = RawBigit * In^exponent_ * 2^shift_amount
+  //   = RawBigit * In^exponent_ * 2^((shift_amount/28) * 28 + shift_amount%28)
+  //   = RawBigit * In^exponent_ * 2^((shift_amount/28) * 28) * 2^(shift_amount%28)
+  //   = RawBigit * In^exponent_ * (2^28)^(shift_amount/28) * 2^(shift_amount%28)
+  //   = (RawBigit * 2^(shift_amount%28)) * In^exponent_ * In^(shift_amount/28)
+  //   = (RawBigit * 2^(shift_amount%28)) * In^(exponent_ + shift_amount/28)
+  //   = (RawBigit * 2^(shift_amount%28)) * In^(exponent_')
   if (used_bigits_ == 0) {
     return;
   }
@@ -263,7 +273,7 @@ void Bignum::MultiplyByUInt32(const uint32_t factor) {
   // carry_max = product_max >> kBigitSize 
   //           = (0xffff_ffff_ffff_ffff) >> 28 = 2^36 - 1
   // RawBigit(i)_max = 2 ^ 28 - 1
-  // product_max = factor_max * RawBigit(i)_max + carry_max
+  // product_max = factor_max * RawBigit_max + carry_max
   //   = (2^32 - 1) * (2 ^ 28 - 1) + 2^36 - 1
   //   = 2^60 - 2^28- 2^32 + 2^36
   //   = B1_0000_0000_0000_0000_0000_0000_1110_1111_0000_0000_0000_0000_0000_0000_0000
@@ -273,18 +283,19 @@ void Bignum::MultiplyByUInt32(const uint32_t factor) {
   // u = used_bigits_ - 1
   // f = factor
   // C = carry = 0
-  // num = B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u
+  // In = 2^kBigitSize = 2^28
+  // num = (B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * In^exponent_
   // num * f  + C
-  //   = (B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f + C
-  //   = C + B[0] * f + (B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f
-  //   = (C0 * a + R0) + (B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f
-  //   = R0 + (C0 + B[1] * f) * a + (B[2] * a^2 + ... + B[u] * a^u) * f
-  //   = R0 + (C1 * a + R1) * a + (B[2] * a^2 + ... + B[u] * a^u) * f
-  //   = R0 + R1 * a + (C1 + B[2] * f) * a^2 + (... + B[u] * a^u) * f
-  //   = R0 + R1 * a + (C2 * a + R2) * a^2 + (... + B[u] * a^u) * f
-  //   = R0 + R1 * a + R2 * a^2 + C2 * a^3 + (... + B[u] * a^u) * f
-  //   = ...... ...... ...... ...... ...... ...... ...... ...... ...... ......
-  //   = R0 + R1 * a + R2 * a^2 + R3 * a^3 + ... + Ru * a^u + Cu * a^(u+1)
+  //   = ((B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f + C) * In^exponent_
+  //   = (C + B[0] * f + (B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f) * In^exponent_
+  //   = ((C0 * a + R0) + (B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f) * In^exponent_
+  //   = (R0 + (C0 + B[1] * f) * a + (B[2] * a^2 + ... + B[u] * a^u) * f) * In^exponent_
+  //   = (R0 + (C1 * a + R1) * a + (B[2] * a^2 + ... + B[u] * a^u) * f) * In^exponent_
+  //   = (R0 + R1 * a + (C1 + B[2] * f) * a^2 + (... + B[u] * a^u) * f) * In^exponent_
+  //   = (R0 + R1 * a + (C2 * a + R2) * a^2 + (... + B[u] * a^u) * f) * In^exponent_
+  //   = (R0 + R1 * a + R2 * a^2 + C2 * a^3 + (... + B[u] * a^u) * f) * In^exponent_
+  //   = ...... ...... ...... ...... ...... ...... ...... ...... ...... ...... ......
+  //   = (R0 + R1 * a + R2 * a^2 + R3 * a^3 + ... + Ru * a^u + Cu * a^(u+1)) * In^exponent_
   DOUBLE_CONVERSION_ASSERT(kDoubleChunkSize >= kBigitSize + 32 + 1);
   DoubleChunk carry = 0;
   for (int i = 0; i < used_bigits_; ++i) {
@@ -314,7 +325,7 @@ void Bignum::MultiplyByUInt64(const uint64_t factor) {
     return;
   }
   // low_max = 0xFFFF FFFF
-  // high_max = 0xFFF FFFFF
+  // high_max = 0xFFFF FFFFF
   // product_low_max 
   //   = RawBigit_max * low_max 
   //   = 0xFFF FFFF * 0xFFFF FFFF
@@ -336,11 +347,12 @@ void Bignum::MultiplyByUInt64(const uint64_t factor) {
   // u = used_bigits_ - 1
   // f = factor = high * 2^32 + low
   // C = carry = 0
-  // num = B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u
+  // In = 2^kBigitSize = 2^28
+  // num = (B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * In^exponent_
   // num * f  + C
-  //   = (B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f + C
-  //   = C + B[0] * f + (B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f
-  //   = C + B[0] * (high * 2^32 + low) + (B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f
+  //   = ((B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f + C) * In^exponent_
+  //   = (C + B[0] * f + (B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f) * In^exponent_
+  //   = (C + B[0] * (high * 2^32 + low) + (B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * f) * In^exponent_
   // 
   // B[i] * a^i * high * 2^32 + B[i] * a^i * low + carry * a^i
   //   = product_high_i * a^i * 2^32 + product_low_i * a^i + carry * a^i
@@ -349,7 +361,7 @@ void Bignum::MultiplyByUInt64(const uint64_t factor) {
   //   = product_high_i * a^(i+1) * 2^4 + (carry >> 28) * a^(i+1) + tmp * a^i
   //   = (product_high_i * 2^4 + carry >> 28) * a^(i+1) + (tmp >> 28 * a + tmp & kBigitMask) * a^i
   //   = (product_high_i << 4 + carry >> 28 + tmp >> 28) * a^(i+1) + (tmp & kBigitMask) * a^i
-  //   = carry' * a^(i+1) + (tmp & kBigitMask) * a^i
+  //   = carry' * a^(i+1) + B[i]' * a^i
   DOUBLE_CONVERSION_ASSERT(kBigitSize < 32);
   uint64_t carry = 0;
   const uint64_t low = factor & 0xFFFFFFFF;
@@ -373,7 +385,9 @@ void Bignum::MultiplyByUInt64(const uint64_t factor) {
 
 
 void Bignum::MultiplyByPowerOfTen(const int exponent) {
-  // 7,450,580,596,923,828,125
+  // 5^13 = 1,220,703,125 < 2^32 - 1
+  // 5^27 = 7,450,580,596,923,828,125 < 2^64 - 1
+  // 10^exponent = (5 * 2)^exponent = 5^exponent * 2^exponent
   static const uint64_t kFive27 = DOUBLE_CONVERSION_UINT64_2PART_C(0x6765c793, fa10079d);
   static const uint16_t kFive1 = 5;
   static const uint16_t kFive2 = kFive1 * 5;
@@ -394,7 +408,7 @@ void Bignum::MultiplyByPowerOfTen(const int exponent) {
 
   DOUBLE_CONVERSION_ASSERT(exponent >= 0);
 
-  if (exponent == 0) {
+  if (exponent == 0) { // 10^0 = 1
     return;
   }
   if (used_bigits_ == 0) {
@@ -816,6 +830,23 @@ void Bignum::Align(const Bignum& other) {
 void Bignum::BigitsShiftLeft(const int shift_amount) {
   DOUBLE_CONVERSION_ASSERT(shift_amount < kBigitSize);
   DOUBLE_CONVERSION_ASSERT(shift_amount >= 0);
+
+  // 0 =< shift_amount < 28
+  // a = 2^kBigitSize = 2^28 
+  // u = used_bigits_ - 1
+  // C = carry = 0
+  // In = 2^kBigitSize = 2^28
+  // num = (B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * In^exponent_
+  // num * 2^shift_amount  + C
+  //   = ((B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * 2^shift_amount + C) * In^exponent_
+  //
+  // B[i] << shift_amount + carry_(i-1)
+  //   = B[i] << shift_amount + (B[i-1] >> (28 - shift_amount))
+  //   = B[i] * 2^shift_amount + (B[i-1] >> (28 - shift_amount))
+  //   = B[i] * 2^28 / 2^(28 - shift_amount) + (B[i-1] >> (28 - shift_amount))
+  //   = (B[i] >> (28 - shift_amount)) * a + (B[i-1] >> (28 - shift_amount)
+  //
+  // The max length of carry is 
   Chunk carry = 0;
   for (int i = 0; i < used_bigits_; ++i) {
     const Chunk new_carry = RawBigit(i) >> (kBigitSize - shift_amount);
