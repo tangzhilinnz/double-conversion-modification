@@ -831,22 +831,22 @@ void Bignum::BigitsShiftLeft(const int shift_amount) {
   DOUBLE_CONVERSION_ASSERT(shift_amount < kBigitSize);
   DOUBLE_CONVERSION_ASSERT(shift_amount >= 0);
 
-  // 0 =< shift_amount < 28
-  // a = 2^kBigitSize = 2^28 
-  // u = used_bigits_ - 1
-  // C = carry = 0
-  // In = 2^kBigitSize = 2^28
-  // num = (B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * In^exponent_
-  // num * 2^shift_amount  + C
-  //   = ((B[0] + B[1] * a + B[2] * a^2 + ... + B[u] * a^u) * 2^shift_amount + C) * In^exponent_
+  // The max length of carry: 28 - (28 - shift_amount) = shift_amount
+  // The max length of RawBigit(i): 28
+  // 
+  // carry_i = RawBigit(i) >> (28 - shift_amount)
+  // |_ carry_i _| (L: shift_amount =< 27)
+  // 
+  // RawBigit(i+1) << shift_amount
+  // |_ RawBigit(i+1) _|_ 0 ... 0 _| (L: shift_amount + 28 =< 27+28 = 55)
   //
-  // B[i] << shift_amount + carry_(i-1)
-  //   = B[i] << shift_amount + (B[i-1] >> (28 - shift_amount))
-  //   = B[i] * 2^shift_amount + (B[i-1] >> (28 - shift_amount))
-  //   = B[i] * 2^28 / 2^(28 - shift_amount) + (B[i-1] >> (28 - shift_amount))
-  //   = (B[i] >> (28 - shift_amount)) * a + (B[i-1] >> (28 - shift_amount)
+  // RawBigit(i+1) << shift_amount + carry_i
+  // |_ RawBigit(i+1) _|_ carry_i _| (L: shift_amount + 28 =< 27+28 = 55)
   //
-  // The max length of carry is 
+  // RawBigit(i+1) << shift_amount + carry_i
+  //   = (RawBigit(i+1) >> (28 - shift_amount)) * 2^28 + RawBigit'(i+1)
+  // RawBigit'(i+1) = (RawBigit(i+1) << shift_amount + carry_i) & kBigitMask
+
   Chunk carry = 0;
   for (int i = 0; i < used_bigits_; ++i) {
     const Chunk new_carry = RawBigit(i) >> (kBigitSize - shift_amount);
