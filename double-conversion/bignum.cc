@@ -95,12 +95,12 @@ static uint64_t ReadUInt64(const Vector<const char> buffer,
 
 
 void Bignum::AssignDecimalString(const Vector<const char> value) {
-  // 2^64 = 18446744073709551616 > 10^19
+  // 2^64 = 18,446,744,073,709,551,616 > 9,999,999,999,999,999,999
   static const int kMaxUint64DecimalDigits = 19;
   Zero();
   int length = value.length();
   unsigned pos = 0;
-  // Let's just say that each digit needs 4 bits.
+
   while (length >= kMaxUint64DecimalDigits) {
     const uint64_t digits = ReadUInt64(value, pos, kMaxUint64DecimalDigits);
     pos += kMaxUint64DecimalDigits;
@@ -132,6 +132,7 @@ static uint64_t HexCharValue(const int c) {
 void Bignum::AssignHexString(Vector<const char> value) {
   Zero();
   // Required capacity could be reduced by ignoring leading zeros.
+  // Let's just say that each digit needs 4 bits.
   EnsureCapacity(((value.length() * 4) + kBigitSize - 1) / kBigitSize);
   DOUBLE_CONVERSION_ASSERT(sizeof(uint64_t) * 8 >= kBigitSize + 4);  // TODO: static_assert
   // Accumulates converted hex digits until at least kBigitSize bits.
@@ -170,18 +171,42 @@ void Bignum::AddBignum(const Bignum& other) {
   // After this call exponent_ <= other.exponent_.
   Align(other);
 
-  // There are two possibilities:
-  //   aaaaaaaaaaa 0000  (where the 0s represent a's exponent)
-  //     bbbbb 00000000
-  //   ----------------
-  //   ccccccccccc 0000
-  // or
-  //    aaaaaaaaaa 0000
-  //  bbbbbbbbb 0000000
-  //  -----------------
-  //  cccccccccccc 0000
-  // In both cases we might need a carry bigit.
-
+  // There are 5 possibilities:
+  //   aaaaaaaaaaaa|0000  (where the 0s represent exponent)
+  //      bbbbb|00000000
+  //   -----------------
+  // c'cccccccccccc|0000
+  // ____________________________________________
+  //                  0|  (a == 0)
+  //   bbbbbbbbb|0000000
+  //   -----------------
+  //   bbbbbbbbb0000000|
+  // ____________________________________________
+  //     aaaaaaaaaa|0000
+  //   bbbbbbbbb|0000000
+  //   -----------------
+  // c'cccccccccccc|0000
+  // ____________________________________________
+  //   aaaaaaaaaaaa|0000
+  //       bbbbbbbb|0000
+  //   -----------------
+  // c'cccccccccccc|0000
+  // ____________________________________________
+  //              a|0000
+  //   bbbbbbbb|00000000
+  //   -----------------
+  //   bbbbbbbb000a|0000
+  // ____________________________________________
+  // In all cases we might need a carry bigit.
+  // carry_max = product_max >> kBigitSize 
+  //           = (0xffff ffff) >> 28 = 0xf = 15
+  // RawBigit_max = 2 ^ 28 - 1
+  // my_max = RawBigit_max = 2 ^ 28 - 1
+  // sum_max = my_max + RawBigit_max + carry_max
+  //   = (2^28 - 1) + (2 ^ 28 - 1) + 15
+  //   = 2^29 + 13 < 2^32 - 1
+  // 
+  // all the variables above can be kept in Chunk (uint32_t)
   EnsureCapacity(1 + (std::max)(BigitLength(), other.BigitLength()) - exponent_);
   Chunk carry = 0;
   int bigit_pos = other.exponent_ - exponent_;
@@ -411,7 +436,7 @@ void Bignum::MultiplyByPowerOfTen(const int exponent) {
   if (exponent == 0) { // 10^0 = 1
     return;
   }
-  if (used_bigits_ == 0) {
+  if (used_bigits_ == 0) { // 0 * 10^exponent = 0
     return;
   }
   // We shift by exponent at the end just before returning.
