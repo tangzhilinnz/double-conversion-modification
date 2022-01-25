@@ -738,9 +738,11 @@ Bignum::Chunk Bignum::BigitOrZero(const int index) const {
   if (index >= BigitLength()) {
     return 0;
   }
+  // index < used_bigits_ + exponent_
   if (index < exponent_) {
     return 0;
   }
+  // index >= exponent_
   return RawBigit(index - exponent_);
 }
 
@@ -754,9 +756,29 @@ int Bignum::Compare(const Bignum& a, const Bignum& b) {
     return -1;
   }
   if (bigit_length_a > bigit_length_b) {
+    // k = 2^28
+    // b_max 
+    //   = (B[ub-1] * k^(ub-1) + B[ub-2] * k^(ub-2) + ... + B[0] * k^0) * k^eb
+    //   = (k-1) * (k^(ub-1) + k^(ub-2) + ... + k^0) * k^eb
+    //   = (k-1) * (k^ub - 1) / (k-1) * k^eb = k^(ub+eb) - k^eb
+    // a_min
+    //   = (B[ua-1] * k^(ua-1) + B[ua-2] * k^(ua-2) + ... + B[0] * k^0) * k^ea
+    //   = k^(ua-1+ea)
+    // when bigit_length_a > bigit_length_b,
+    // we have bigit_length_a >= bigit_length_b + 1,
+    // set bigit_length_a = bigit_length_b + 1,  
+    // a_min = k^(ua-1+ea) = k^(ub+eb) > k^(ub+eb) - k^eb = b_max
     return +1;
   }
   for (int i = bigit_length_a - 1; i >= (std::min)(a.exponent_, b.exponent_); --i) {
+    // N = bigit_length_a - 1 = bigit_length_b - 1
+    // m = std::min(a.exponent_, b.exponent_)
+    // k = 2^28
+    // m =< i =< N
+    // 0 =< A(i) =< k-1, 0 =< B(i) =< k-1
+    // a = A(N)*k^(N-ea)*k^ea + A(N-1)*k^(N-1-ea)*k^ea + ... + A(i)*k^(i-ea)*k^ea + ... + A(m)*k^(m-ea)*k^ea
+    //   = A(N)*k^N + A(N-1)*k^(N-1) + ... + A(i)*k^(i) + ... + A(m)k^(m)
+    // b = B(N)*k^N + B(N-1)*k^(N-1) + ... + B(i)*k^(i) + ... + B(m)k^(m)
     const Chunk bigit_a = a.BigitOrZero(i);
     const Chunk bigit_b = b.BigitOrZero(i);
     if (bigit_a < bigit_b) {
@@ -793,6 +815,8 @@ int Bignum::PlusCompare(const Bignum& a, const Bignum& b, const Bignum& c) {
 
   Chunk borrow = 0;
   // Starting at min_exponent all digits are == 0. So no need to compare them.
+  // b.L =< a.L =< c.L =< a.L + 1
+  //   ==> c.L == a.L    or    c.L == a.L + 1
   const int min_exponent = (std::min)((std::min)(a.exponent_, b.exponent_), c.exponent_);
   for (int i = c.BigitLength() - 1; i >= min_exponent; --i) {
     const Chunk chunk_a = a.BigitOrZero(i);
@@ -801,14 +825,20 @@ int Bignum::PlusCompare(const Bignum& a, const Bignum& b, const Bignum& c) {
     const Chunk sum = chunk_a + chunk_b;
     if (sum > chunk_c + borrow) {
       return +1;
-    } else {
+    } 
+    else { 
+      // sum =< chunk_c + borrow
+      // if chunk_b(i) + chunk_a(i) > 0xFFF FFFF,
+      // there is 1 bit(0x1) pumping up to chunk_b(i+1) + chunk_a(i+1)
       borrow = chunk_c + borrow - sum;
       if (borrow > 1) {
         return -1;
       }
+      // borrow == 0    or   borrow == 1  
       borrow <<= kBigitSize;
     }
   }
+
   if (borrow == 0) {
     return 0;
   }
