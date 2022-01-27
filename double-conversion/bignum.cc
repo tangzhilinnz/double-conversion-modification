@@ -465,16 +465,29 @@ void Bignum::Square() {
 
   // Comba multiplication: compute each column separately.
   // Example: r = a2a1a0 * b2b1b0.
-  //    r =  1    * a0b0 +
-  //        10    * (a1b0 + a0b1) +
-  //        100   * (a2b0 + a1b1 + a0b2) +
-  //        1000  * (a2b1 + a1b2) +
-  //        10000 * a2b2
+  //    r = 10^0     * a0b0 +
+  //        10^1     * (a1b0 + a0b1) +
+  //        10^2     * (a2b0 + a1b1 + a0b2) +
+  //        100^3    * (a2b1 + a1b2) +
+  //        10000^4  * a2b2
   //
   // In the worst case we have to accumulate nb-digits products of digit*digit.
   //
   // Assert that the additional number of bits in a DoubleChunk are enough to
   // sum up used_digits of Bigit*Bigit.
+  // 
+  // n = used_bigits_ - 1
+  // a = 2^28
+  // num = (B[0] + B[1] * a + B[2] * a^2 + ... + B[n] * a^n) * a^exponent_
+  // num^2 = (B[0] + B[1] * a + B[2] * a^2 + ... + B[n] * a^n)^2 * a^(2*exponent_)
+  // S_i = (B[i]*B[0] + B[i-1]*B[1] + ... + B[2]*B[i-2] + B[1]*B[i-1] + B[0]*B[i]) * a^i
+  // set B[i] = B_Max = a - 1 (0 =< i < used_bigits_)
+  // S_i = (i + 1) * (a - 1)^2 * a^i
+  // accumulator_i = (i + 1) * (a - 1)^2
+  // accumulator_max = accumulator_n = used_bigits_ * (a - 1)^2
+  // accumulator_max >= 2^64 - 1 (in this case, accumulator_max is wider than uint64_t)
+  //   ==> used_bigits_ >= (2^64-1) / (2^28-1)^2 
+  //                    = ((2^32+1)/(2^28-1)) * ((2^32-1)/(2^28-1)) = 16*16
   if ((1 << (2 * (kChunkSize - kBigitSize))) <= used_bigits_) {
     DOUBLE_CONVERSION_UNIMPLEMENTED();
   }
@@ -501,6 +514,7 @@ void Bignum::Square() {
     RawBigit(i) = static_cast<Chunk>(accumulator) & kBigitMask;
     accumulator >>= kBigitSize;
   }
+
   for (int i = used_bigits_; i < product_length; ++i) {
     int bigit_index1 = used_bigits_ - 1;
     int bigit_index2 = i - bigit_index1;
