@@ -236,9 +236,10 @@ void Bignum::AddBignum(const Bignum& other) {
 void Bignum::SubtractBignum(const Bignum& other) {
   DOUBLE_CONVERSION_ASSERT(IsClamped());
   DOUBLE_CONVERSION_ASSERT(other.IsClamped());
-  // We require this to be bigger than other.
+  // We require this to be bigger than other. (*this - other >= 0)
   DOUBLE_CONVERSION_ASSERT(LessEqual(other, *this));
 
+  // After this call exponent_ <= other.exponent_.
   Align(other);
 
   const int offset = other.exponent_ - exponent_;
@@ -251,6 +252,7 @@ void Bignum::SubtractBignum(const Bignum& other) {
     borrow = difference >> (kChunkSize - 1);
   }
   while (borrow != 0) {
+    // DOUBLE_CONVERSION_ASSERT((borrow == 0) || (borrow == 1))
     const Chunk difference = RawBigit(i + offset) - borrow;
     RawBigit(i + offset) = difference & kBigitMask;
     borrow = difference >> (kChunkSize - 1);
@@ -775,7 +777,7 @@ int Bignum::Compare(const Bignum& a, const Bignum& b) {
     // m = std::min(a.exponent_, b.exponent_)
     // k = 2^28
     // m =< i =< N
-    // 0 =< A(i) =< k-1, 0 =< B(i) =< k-1
+    // 0 =< A(i) =< k-1,  0 =< B(i) =< k-1,  A(i) = 0(i < ea), B(i) = 0(i < eb)
     // a = A(N)*k^(N-ea)*k^ea + A(N-1)*k^(N-1-ea)*k^ea + ... + A(i)*k^(i-ea)*k^ea + ... + A(m)*k^(m-ea)*k^ea
     //   = A(N)*k^N + A(N-1)*k^(N-1) + ... + A(i)*k^(i) + ... + A(m)k^(m)
     // b = B(N)*k^N + B(N-1)*k^(N-1) + ... + B(i)*k^(i) + ... + B(m)k^(m)
@@ -799,13 +801,14 @@ int Bignum::PlusCompare(const Bignum& a, const Bignum& b, const Bignum& c) {
   DOUBLE_CONVERSION_ASSERT(c.IsClamped());
   if (a.BigitLength() < b.BigitLength()) {
     return PlusCompare(b, a, c);
-  }
+  } // a.L >= b.L 
   if (a.BigitLength() + 1 < c.BigitLength()) {
     return -1;
-  }
+  } // a.L + 1 >= c.L
   if (a.BigitLength() > c.BigitLength()) {
     return +1;
-  }
+  } // a.L =< c.L
+
   // The exponent encodes 0-bigits. So if there are more 0-digits in 'a' than
   // 'b' has digits, then the bigit-length of 'a'+'b' must be equal to the one
   // of 'a'.
