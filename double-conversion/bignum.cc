@@ -476,18 +476,37 @@ void Bignum::Square() {
   // Assert that the additional number of bits in a DoubleChunk are enough to
   // sum up used_digits of Bigit*Bigit.
   // 
-  // n = used_bigits_ - 1
+  // u = used_bigits_
   // a = 2^28
-  // num = (B[0] + B[1] * a + B[2] * a^2 + ... + B[n] * a^n) * a^exponent_
-  // num^2 = (B[0] + B[1] * a + B[2] * a^2 + ... + B[n] * a^n)^2 * a^(2*exponent_)
-  // S_i = (B[i]*B[0] + B[i-1]*B[1] + ... + B[2]*B[i-2] + B[1]*B[i-1] + B[0]*B[i]) * a^i
-  // set B[i] = B_Max = a - 1 (0 =< i < used_bigits_)
-  // S_i = (i + 1) * (a - 1)^2 * a^i
-  // accumulator_i = (i + 1) * (a - 1)^2
-  // accumulator_max = accumulator_n = used_bigits_ * (a - 1)^2
-  // accumulator_max >= 2^64 - 1 (in this case, accumulator_max is wider than uint64_t)
-  //   ==> used_bigits_ >= (2^64-1) / (2^28-1)^2 
-  //                    = ((2^32+1)/(2^28-1)) * ((2^32-1)/(2^28-1)) = 16*16
+  // 0 =< i < u
+  // R(i) = accumulator(i) >> kBigitSize
+  // B[i] = RawBigit(copy_offset + i) = RawBigit(u + i)
+  // 
+  // a^0     -> B[0]*B[0] + 0
+  // a^1     -> B[1]*B[0] + B[0]*B[1] + R(0)
+  // a^2     -> B[2]*B[0] + B[1]*B[1] + B[0]*B[2] + R(1)
+  // ...... ...... ...... ...... ...... ...... ...... ...... ...... ...... ......
+  // a^i     -> B[i]*B[0] + B[i-1]*B[1] + ... + B[1]*B[i-1] + B[0]*B[i] + R(i-1)
+  // ...... ...... ...... ...... ...... ...... ...... ...... ...... ...... ......
+  // a^(u-2) -> B[u-2]*B[0] + B[u-3]*B[1] + ... + B[1]*B[u-3] + B[0]*B[u-2] + R(u-3)
+  // a^(u-1) -> B[u-1]*B[0] + B[u-2]*B[1] + ... + B[1]*B[u-2] + B[0]*B[u-1] + R(u-2)
+  // 
+  // a^(u)   -> B[u-1]*B[1] + B[u-2]*B[2] + ... + B[2]*B[u-2] + B[1]*B[u-1] + R(u-1)
+  // a^(u+1) -> B[u-1]*B[2] + B[u-2]*B[3] + ... + B[3]*B[u-2] + B[2]*B[u-1] + R(u)
+  // ...... ...... ...... ...... ...... ...... ...... ...... ...... ...... ......
+  // a^(2u-3) -> B[u-1]*B[u-2] + B[u-2]*B[u-1] + R(2u-4)
+  // a^(2u-2) -> B[u-1]*B[u-1] + R(2u-3)
+  // a^(2u-1) -> R(2u-2)
+  //  
+  // accumulator_allowed = 0xFFFF FFFF FFFF FFFF >> 28 = 0xF FFFF FFFF = 2^36 - 1
+  // B_Max = a - 1 (0 =< i < used_bigits_)
+  // accumulator(i) = B[i]*B[0] + B[i-1]*B[1] + ... + B[1]*B[i-1] + B[0]*B[i] + accumulator(i-1)
+  // accumulator_max 
+  //   = used_bigits_ * B_Max^2 + accumulator_allowed
+  //   = used_bigits_ * (2^28 - 1)^2 + 2^36 - 1
+  // Assume accumulator_max >= 2^64 - 1 (wider than uint64_t type)
+  // ==> used_bigits_ >= (2^64 - 2^36) / (2^28 - 1)^2 
+  // ==> used_bigits_ >= 2^36 / 2^28 - 1 = 256
   if ((1 << (2 * (kChunkSize - kBigitSize))) <= used_bigits_) {
     DOUBLE_CONVERSION_UNIMPLEMENTED();
   }
@@ -566,6 +585,15 @@ void Bignum::AssignPowerUInt16(uint16_t base, const int power_exponent) {
     tmp_base >>= 1;
     bit_size++;
   }
+
+  // By mathematical induction, we can prove that:
+  // 2^(b*p) - 1 >= (2^b - 1)^p >= 2^(b*p - 1)
+  // b = bit_size >= 1
+  // p = power_exponent >= 1
+  //            |------- b -------|
+  // 2^b - 1 = B1111 .... .... 1111
+  // final_size_max = bit size of (2^b - 1)^p 
+  // The max size of final_size is b*p 
   const int final_size = bit_size * power_exponent;
   // 1 extra bigit for the shifting, and one for rounded final_size.
   EnsureCapacity(final_size / kBigitSize + 2);
