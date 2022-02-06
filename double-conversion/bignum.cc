@@ -297,7 +297,7 @@ void Bignum::MultiplyByUInt32(const uint32_t factor) {
   // The product of a bigit with the factor is of size kBigitSize + 32.
   // Assert that this number + 1 (for the carry) fits into double chunk.
   // factor_max = 2^32 - 1
-  // carry_max = product_max >> kBigitSize 
+  // carry_max = product_allowed >> kBigitSize 
   //           = (0xffff_ffff_ffff_ffff) >> 28 = 2^36 - 1
   // RawBigit(i)_max = 2 ^ 28 - 1
   // product_max = factor_max * RawBigit_max + carry_max
@@ -579,7 +579,7 @@ void Bignum::AssignPowerUInt16(uint16_t base, const int power_exponent) {
     base >>= 1;
     shifts++;
   }
-  int bit_size = 0;
+  int bit_size = 0; // base_bit_size
   int tmp_base = base;
   while (tmp_base != 0) {
     tmp_base >>= 1;
@@ -618,10 +618,16 @@ void Bignum::AssignPowerUInt16(uint16_t base, const int power_exponent) {
       DOUBLE_CONVERSION_ASSERT(bit_size > 0);
       const uint64_t base_bits_mask =
         ~((static_cast<uint64_t>(1) << (64 - bit_size)) - 1);
+      //                   |--- b ---||--- 64-b ---|
+      // base_bits_mask = B111 ... 1110000 .... 0000
       const bool high_bits_zero = (this_value & base_bits_mask) == 0;
       if (high_bits_zero) {
         this_value *= base;
       } else {
+        // this >= 2^(64 - bit_size), 0 < bit_size =< 32
+        // ==> this > max_32bits = 0xFFFFFFFF
+        // thus the value of this may exceed the range uint64_t can hold
+        // and exit while loop with delayed_multiplication setting only once
         delayed_multiplication = true;
       }
     }
@@ -652,13 +658,15 @@ uint16_t Bignum::DivideModuloIntBignum(const Bignum& other) {
   DOUBLE_CONVERSION_ASSERT(other.IsClamped());
   DOUBLE_CONVERSION_ASSERT(other.used_bigits_ > 0);
 
-  // Easy case: if we have less digits than the divisor than the result is 0.
+  // Easy case: if we have less digits than the divisor then the result is 0.
   // Note: this handles the case where this == 0, too.
   if (BigitLength() < other.BigitLength()) {
     return 0;
   }
 
   Align(other);
+  // exponent_ =< other.exponent_
+  // BigitLength() >= other.BigitLength()
 
   uint16_t result = 0;
 
@@ -975,6 +983,12 @@ void Bignum::SubtractTimes(const Bignum& other, const int factor) {
     const DoubleChunk remove = borrow + product;
     const Chunk difference = RawBigit(i + exponent_diff) - (remove & kBigitMask);
     RawBigit(i + exponent_diff) = difference & kBigitMask;
+    // remove_max 
+    //   = borrow_allowed + product_max
+    //   = 0xFFFF FFFF + 0x7FFF FFFF * 0xFFF FFFF
+    //   = 0x800 0000 7000 0000
+    // borrow_max = remove_max >> 28 + 1 = 0x8000 0008
+    // borrow_max can be hold by a uint32_t var
     borrow = static_cast<Chunk>((difference >> (kChunkSize - 1)) +
                                 (remove >> kBigitSize));
   }

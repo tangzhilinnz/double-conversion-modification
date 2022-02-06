@@ -81,6 +81,18 @@ class DiyFp {
     const uint64_t bd = b * d;
     // By adding 1U << 31 to tmp we round the final result.
     // Halfway cases will be rounded up.
+    // this * other 
+    //   = (a * 2^32 + b) * (c * 2^32 + d)
+    //   = ac * 2^64 + bc * 2^32 + ad * 2^32 + bd
+    //   = ac * 2^64 + 2^32 * (2^32 * bc>>32 + bc & kM32) + 2^32 * (2^32 * ad>>32 + ad & kM32) + (2^32 * bd>>32 + bd & kM32)
+    //   = 2^64 * (ac + bc>>32 + ad>>32) + 2^32 * (bc & kM32 + ad & kM32 + bd>>32) + bd & kM32
+    // ceil of this * other
+    //   = 2^64 * (ac + bc>>32 + ad>>32) + 2^32 * (bc & kM32 + ad & kM32 + bd>>32 + 1U << 31) + bd & kM32
+    // tmp = bc & kM32 + ad & kM32 + bd>>32 + 1U << 31
+    // ==> tmp_max = 0x1 + 0x1 + 0xFFFF FFFE + 0x8000 000
+    //             = 0x1 8000 0000
+    // tmp_max >> 32 = 1
+    // f_max = 0xFFFF FFFF FFFF FFFE (can be hold by a uint64_t)
     const uint64_t tmp = (bd >> 32) + (ad & kM32) + (bc & kM32) + (1U << 31);
     e_ += other.e_ + 64;
     f_ = ac + (ad >> 32) + (bc >> 32) + (tmp >> 32);
@@ -93,6 +105,7 @@ class DiyFp {
     return result;
   }
 
+  // EXPONENT: 0, MANTISA: not 0, ==> VALUE: denormalised
   void Normalize() {
     DOUBLE_CONVERSION_ASSERT(f_ != 0);
     uint64_t significand = f_;

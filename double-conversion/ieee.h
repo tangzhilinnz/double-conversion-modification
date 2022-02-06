@@ -25,6 +25,47 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+// Special Values
+// IEEE reserves exponent field values of all 0s and all 1s to denote special
+// values in the floating - point scheme.
+
+// Denormalized
+// If the exponent is all 0s, then the value is a denormalized number, which
+// now has an assumed leading 0 before the binary point. Thus, this represents
+// a number (-1)^s * 0.f * 2^-1074, where s is the sign bit and f is the
+// fraction.
+// As denormalized numbers get smaller, they gradually lose precision as the 
+// left bits of the fraction become zeros. At the smallest non-zero
+// denormalized value (only the least-significant fraction bit is one), a 
+// 32-bit floating-point number has but a single bit of precision, 
+// compared to the standard 24-bits for normalized values.
+
+// Zero
+// You can think of zero as a denormalized number(an implicit leading 0 bit) 
+// with all 0 fraction bits. Note that -0 and +0 are distinct values, though
+// they both compare as equal.
+
+// Infinity
+// The values +¡Þ and -¡Þ are denoted with an exponent of all 1s and a fraction
+// of all 0s. The sign bit distinguishes between negative infinity and positive
+// infinity. Being able to denote infinity as a specific value is useful
+// because it allows operations to continue past overflow situations.
+// Operations with infinite values are well defined in IEEE floating point.
+
+// Not A Number
+// The value NaN(Not a Number) is used to represent a value that does not 
+// represent a real number. NaN's are represented by a bit pattern with an 
+// exponent of all 1s and a non-zero fraction.
+// There are two categories of NaN: QNaN (Quiet NaN) and SNaN (Signalling NaN).
+// A QNaN is a NaN with the most significant fraction bit set. QNaN's propagate
+// freely through most arithmetic operations. These values are generated from
+// an operation when the result is not mathematically defined.
+// An SNaN is a NaN with the most significant fraction bit clear. It can be 
+// used to signal an exception when used in operations. SNaN's can be handy to
+// assign to uninitialized variables to trap premature usage.
+// Semantically, QNaN's denote indeterminate operations, while SNaN's denote
+// invalid operations.
+
 #ifndef DOUBLE_CONVERSION_DOUBLE_H_
 #define DOUBLE_CONVERSION_DOUBLE_H_
 
@@ -48,8 +89,8 @@ class Double {
   static const uint64_t kQuietNanBit = DOUBLE_CONVERSION_UINT64_2PART_C(0x00080000, 00000000);
   static const int kPhysicalSignificandSize = 52;  // Excludes the hidden bit.
   static const int kSignificandSize = 53;
-  static const int kExponentBias = 0x3FF + kPhysicalSignificandSize;
-  static const int kMaxExponent = 0x7FF - kExponentBias;
+  static const int kExponentBias = 0x3FF + kPhysicalSignificandSize; // 1075
+  static const int kMaxExponent = 0x7FF - kExponentBias; // 972
 
   Double() : d64_(0) {}
   explicit Double(double d) : d64_(double_to_uint64(d)) {}
@@ -77,6 +118,7 @@ class Double {
       e--;
     }
     // Do the final shifts in one go.
+    // 0x001F FFFF FFFF FFFF
     f <<= DiyFp::kSignificandSize - kSignificandSize;
     e -= DiyFp::kSignificandSize - kSignificandSize;
     return DiyFp(f, e);
